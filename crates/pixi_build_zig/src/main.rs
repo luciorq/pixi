@@ -90,6 +90,7 @@ impl GenerateRecipe for ZigGenerator {
             args,
             cc_flags,
             is_bash: !Platform::current().is_windows(),
+            host_is_windows: host_platform.is_windows(),
         }
         .render();
 
