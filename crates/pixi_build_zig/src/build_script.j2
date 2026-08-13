@@ -1,0 +1,38 @@
+{#- Cache dirs: keep zig's caches inside the work directory so builds stay
+    hermetic and incremental rebuilds reuse them. A user-provided value (via
+    the `env` config option or the calling environment) wins.
+    C toolchain: route everything the build spawns (configure/make steps,
+    dependency build scripts probing $CC) through zig's C toolchain,
+    targeting the same triple as the zig build itself. CC_FOR_BUILD stays
+    untargeted so tools compiled to run on the build machine during cross
+    builds keep working. -#}
+{%- macro env(key) -%}
+{%- if is_bash %}{{ "$" ~ key }}{% else %}{{ "%" ~ key ~ "%" }}{% endif -%}
+{%- endmacro -%}
+{%- macro export(key, value) -%}
+{%- if is_bash -%}
+export {{ key }}="{{ value }}"
+{%- else -%}
+SET "{{ key }}={{ value }}"
+{%- endif -%}
+{%- endmacro -%}
+{%- set install_prefix = env("PREFIX") if is_bash else env("LIBRARY_PREFIX") -%}
+{%- if is_bash -%}
+export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$SRC_DIR/.zig-global-cache}"
+export ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-$SRC_DIR/.zig-local-cache}"
+{%- else -%}
+if not defined ZIG_GLOBAL_CACHE_DIR SET "ZIG_GLOBAL_CACHE_DIR={{ env("SRC_DIR") }}\.zig-global-cache"
+if not defined ZIG_LOCAL_CACHE_DIR SET "ZIG_LOCAL_CACHE_DIR={{ env("SRC_DIR") }}\.zig-local-cache"
+{%- endif %}
+{% if cc_flags is not none %}
+{{ export("CC", "zig cc" ~ cc_flags) }}
+{{ export("CXX", "zig c++" ~ cc_flags) }}
+{{ export("AR", "zig ar") }}
+{{ export("RANLIB", "zig ranlib") }}
+{{ export("CC_FOR_BUILD", "zig cc") }}
+{{ export("CXX_FOR_BUILD", "zig c++") }}
+{% endif %}
+zig build --build-file "{{ source_dir }}{{ "/" if is_bash else "\\" }}build.zig" --prefix "{{ install_prefix }}" --search-prefix "{{ install_prefix }}"{% for arg in args %} {{ arg }}{% endfor %}
+{%- if not is_bash %}
+if errorlevel 1 exit 1
+{%- endif %}
