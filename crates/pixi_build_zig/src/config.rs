@@ -94,6 +94,12 @@ pub struct ZigBackendConfig {
     /// `false` the backend emits no `-Dtarget`/`-Dcpu`/`-Doptimize` flags at
     /// all and only `extra-args` control the build. Defaults to `true`.
     pub standard_options: Option<bool>,
+    /// Whether rattler-build relocates binaries (rpath/install-name
+    /// rewriting) after the build. When unset, relocation is enabled except
+    /// when cross-compiling for macOS from a non-mac machine: the Mach-O
+    /// post-processing needs `install_name_tool`/`codesign`, which only
+    /// exist on macOS, and zig links and ad-hoc-signs its artifacts itself.
+    pub binary_relocation: Option<bool>,
     /// Whether to export the zig-based C toolchain (`CC="zig cc ..."`,
     /// `CXX="zig c++ ..."`, `AR="zig ar"`, `RANLIB="zig ranlib"`, plus
     /// untargeted `CC_FOR_BUILD`/`CXX_FOR_BUILD`) so that anything the build
@@ -146,6 +152,7 @@ impl BackendConfig for ZigBackendConfig {
                 .clone()
                 .or_else(|| self.macos_deployment_target.clone()),
             standard_options: target_config.standard_options.or(self.standard_options),
+            binary_relocation: target_config.binary_relocation.or(self.binary_relocation),
             export_c_toolchain: target_config.export_c_toolchain.or(self.export_c_toolchain),
         })
     }

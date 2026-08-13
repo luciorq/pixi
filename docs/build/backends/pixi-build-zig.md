@@ -191,6 +191,19 @@ Set to `false` when the project's `build.zig` does not use
 `b.standardTargetOptions`/`b.standardOptimizeOption`; the backend then emits
 no `-D` flags at all and only `extra-args` control the build.
 
+### `binary-relocation`
+
+- **Type**: `Boolean`
+- **Default**: `true`, except when cross-compiling for macOS from a non-mac
+  machine
+
+Whether rattler-build relocates binaries (rpath/install-name rewriting)
+after the build. When cross-compiling for macOS from linux or Windows the
+backend disables relocation automatically: rattler-build's Mach-O
+post-processing shells out to `install_name_tool`/`codesign`, which only
+exist on macOS, and zig links and ad-hoc-signs its artifacts itself. Set
+this option to force either behavior.
+
 ### `export-c-toolchain`
 
 - **Type**: `Boolean`
@@ -245,5 +258,9 @@ defaults (`**/*.zig`, `build.zig`, `build.zig.zon`).
   vendored) because the build environment has no network access.
 - Cross-compiling to macOS system frameworks requires an SDK; plain
   executables and libraries work without one.
+- When cross-compiling for macOS from a non-mac machine, binary relocation
+  is skipped (see `binary-relocation` above). Packages whose binaries link
+  dylibs from conda host dependencies should be built on a mac in that
+  case; self-contained binaries — the common case for zig — are unaffected.
 - On Windows the build installs into `%LIBRARY_PREFIX%` (the `Library\`
   subdirectory of the prefix), following the conda convention.
