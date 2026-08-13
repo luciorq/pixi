@@ -11,7 +11,7 @@ use pixi_build_backend::{
     tools::BackendIdentifier,
     variants::NormalizedKey,
 };
-use rattler_build_recipe::stage0::{Item, Script, SerializableMatchSpec, Value};
+use rattler_build_recipe::stage0::{BinaryRelocation, Item, Script, SerializableMatchSpec, Value};
 use rattler_conda_types::{ChannelUrl, Platform};
 use std::collections::HashSet;
 use std::{
@@ -93,6 +93,22 @@ impl GenerateRecipe for ZigGenerator {
             host_is_windows: host_platform.is_windows(),
         }
         .render();
+
+        // Cross-compiling FOR macOS FROM a non-mac machine: rattler-build's
+        // Mach-O post-processing shells out to install_name_tool/codesign,
+        // which only exist on macOS (its builtin relinker cannot add the
+        // default `lib/` rpath). Zig links and ad-hoc-signs its artifacts
+        // itself, so default to skipping binary relocation there instead of
+        // failing the build. `binary-relocation` in the config overrides
+        // this in either direction.
+        let cross_to_macos = host_platform.is_osx() && !Platform::current().is_osx();
+        if !config.binary_relocation.unwrap_or(!cross_to_macos) {
+            generated_recipe
+                .recipe
+                .build
+                .dynamic_linking
+                .binary_relocation = BinaryRelocation::Boolean(Value::new_concrete(false, None));
+        }
 
         generated_recipe.recipe.build.script = Script::from_content(build_script)
             .with_env(
@@ -462,6 +478,91 @@ mod tests {
         {
             ".content" => "[ ... script ... ]",
         });
+    }
+
+    #[tokio::test]
+    async fn test_cross_to_macos_disables_binary_relocation() {
+        // These tests run on linux/windows CI machines; guard the one
+        // platform where the cross-to-macos default does not apply.
+        if Platform::current().is_osx() {
+            return;
+        }
+
+        let project_model = project_fixture!({
+            "name": "foobar",
+            "version": "0.1.0",
+        });
+
+        let generator = ZigGenerator::default();
+
+        // Cross to macOS: relocation disabled by default.
+        let recipe = generator
+            .generate_recipe(
+                &project_model,
+                &ZigBackendConfig::default(),
+                PathBuf::from("."),
+                Platform::OsxArm64,
+                None,
+                &HashSet::new(),
+                vec![],
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect("Failed to generate recipe");
+        assert_eq!(
+            recipe.recipe.build.dynamic_linking.binary_relocation,
+            BinaryRelocation::Boolean(Value::new_concrete(false, None)),
+        );
+
+        // Same target with an explicit override: relocation stays enabled.
+        let recipe = generator
+            .generate_recipe(
+                &project_model,
+                &ZigBackendConfig {
+                    binary_relocation: Some(true),
+                    ..Default::default()
+                },
+                PathBuf::from("."),
+                Platform::OsxArm64,
+                None,
+                &HashSet::new(),
+                vec![],
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect("Failed to generate recipe");
+        assert_eq!(
+            recipe.recipe.build.dynamic_linking.binary_relocation,
+            BinaryRelocation::default(),
+        );
+
+        // Non-mac target: relocation untouched.
+        let recipe = generator
+            .generate_recipe(
+                &project_model,
+                &ZigBackendConfig::default(),
+                PathBuf::from("."),
+                Platform::Linux64,
+                None,
+                &HashSet::new(),
+                vec![],
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect("Failed to generate recipe");
+        assert_eq!(
+            recipe.recipe.build.dynamic_linking.binary_relocation,
+            BinaryRelocation::default(),
+        );
     }
 
     #[test]
