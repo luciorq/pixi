@@ -16,7 +16,14 @@ export {{ key }}="{{ value }}"
 SET "{{ key }}={{ value }}"
 {%- endif -%}
 {%- endmacro -%}
-{%- set install_prefix = env("PREFIX") if is_bash else env("LIBRARY_PREFIX") -%}
+{#- The install prefix follows the TARGET platform: Windows packages use the
+    Library\ subdirectory of the prefix regardless of which machine builds
+    them (relevant when cross-compiling for Windows from unix). -#}
+{%- if host_is_windows -%}
+{%- set install_prefix = env("PREFIX") ~ "/Library" if is_bash else env("LIBRARY_PREFIX") -%}
+{%- else -%}
+{%- set install_prefix = env("PREFIX") -%}
+{%- endif -%}
 {%- if is_bash -%}
 export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$SRC_DIR/.zig-global-cache}"
 export ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-$SRC_DIR/.zig-local-cache}"
@@ -32,6 +39,11 @@ if not defined ZIG_LOCAL_CACHE_DIR SET "ZIG_LOCAL_CACHE_DIR={{ env("SRC_DIR") }}
 {{ export("CC_FOR_BUILD", "zig cc") }}
 {{ export("CXX_FOR_BUILD", "zig c++") }}
 {% endif %}
+{% if is_bash -%}
+mkdir -p "{{ install_prefix }}"
+{%- else -%}
+if not exist "{{ install_prefix }}" mkdir "{{ install_prefix }}"
+{%- endif %}
 zig build --build-file "{{ source_dir }}{{ "/" if is_bash else "\\" }}build.zig" --prefix "{{ install_prefix }}" --search-prefix "{{ install_prefix }}"{% for arg in args %} {{ arg }}{% endfor %}
 {%- if not is_bash %}
 if errorlevel 1 exit 1
