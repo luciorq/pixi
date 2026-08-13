@@ -6226,6 +6226,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "pixi-build-zig"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "indexmap 2.14.0",
+ "insta",
+ "miette 7.6.0",
+ "minijinja",
+ "pixi_build_backend",
+ "pixi_build_types",
+ "rattler_build_recipe",
+ "rattler_conda_types",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "pixi_allocator"
 version = "0.1.0"
 dependencies = [

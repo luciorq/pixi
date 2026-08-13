@@ -18,6 +18,7 @@ on:
       - "crates/pixi_build_cmake/**"
       - "crates/pixi_build_rust/**"
       - "crates/pixi_build_mojo/**"
+      - "crates/pixi_build_zig/**"
       - ".github/workflows/backends-release.yml"
   pull_request:
     types:

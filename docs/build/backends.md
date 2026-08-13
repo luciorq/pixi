@@ -13,6 +13,7 @@ This also allows for decoupling of the build backend from Pixi and it's manifest
 | [**`pixi-build-r`**](./backends/pixi-build-r.md) | R packages using `R CMD INSTALL` |
 | [**`pixi-build-rust`**](./backends/pixi-build-rust.md) |  Cargo-based Rust applications and libraries |
 | [**`pixi-build-mojo`**](./backends/pixi-build-mojo.md) |  Mojo applications and packages |
+| [**`pixi-build-zig`**](./backends/pixi-build-zig.md) |  Zig projects using `build.zig`, with cross-compilation |
 
 All backends are available through the [conda-forge](https://prefix.dev/channels/conda-forge) conda channel and work across multiple platforms (Linux, macOS, Windows).
 For the latest backend versions, you can prepend the channel list with the [prefix.dev/pixi-build-backends](https://prefix.dev/channels/pixi-build-backends) conda channel.
