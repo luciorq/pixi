@@ -144,8 +144,22 @@ impl GenerateRecipe for ZigGenerator {
     }
 }
 
+pub fn main() {
+    // Non-mac build machines have no system `codesign`, but rattler-build
+    // (embedded in this process) can ad-hoc sign Mach-O binaries itself; it
+    // gates that behind this environment variable. Default it on so that
+    // relocation-enabled cross builds for macOS re-sign after relinking. An
+    // explicit value from the caller wins.
+    // SAFETY: no other threads exist yet; the tokio runtime starts below.
+    if !Platform::current().is_osx() && std::env::var_os("RATTLER_BUILD_BUILTIN_CODESIGN").is_none()
+    {
+        unsafe { std::env::set_var("RATTLER_BUILD_BUILTIN_CODESIGN", "1") };
+    }
+    async_main();
+}
+
 #[tokio::main]
-pub async fn main() {
+async fn async_main() {
     if let Err(err) = pixi_build_backend::cli::main(|log| {
         IntermediateBackendInstantiator::<ZigGenerator>::new(
             BackendIdentifier::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),

@@ -199,10 +199,20 @@ no `-D` flags at all and only `extra-args` control the build.
 
 Whether rattler-build relocates binaries (rpath/install-name rewriting)
 after the build. When cross-compiling for macOS from linux or Windows the
-backend disables relocation automatically: rattler-build's Mach-O
-post-processing shells out to `install_name_tool`/`codesign`, which only
-exist on macOS, and zig links and ad-hoc-signs its artifacts itself. Set
-this option to force either behavior.
+backend disables relocation automatically: adding the default `lib/` rpath
+requires `install_name_tool`, which only exists on macOS (rattler-build's
+builtin Mach-O relinker can only rewrite paths in place), and zig links and
+ad-hoc-signs its artifacts itself. Set this option to force either
+behavior.
+
+When relocation is forced on for a macOS cross build, the backend enables
+rattler-build's
+[builtin ad-hoc codesigning](https://rattler-build.prefix.dev/dev/compilers/#builtin-codesigning-for-macos-cross-compilation)
+(`RATTLER_BUILD_BUILTIN_CODESIGN`) automatically on non-mac build machines,
+so binaries modified by relinking are re-signed without Apple's `codesign`.
+In-place rewrites (e.g. absolute prefix paths to host dylibs) then work;
+edits that must grow the binary, like adding an rpath, still require a mac
+build machine.
 
 ### `export-c-toolchain`
 
