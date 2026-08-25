@@ -1,12 +1,14 @@
 mod build_script;
 mod config;
+mod metadata;
 mod target;
 
 use build_script::BuildScriptContext;
 use config::ZigBackendConfig;
+use metadata::ZonMetadataProvider;
 use miette::IntoDiagnostic;
 use pixi_build_backend::{
-    generated_recipe::{DefaultMetadataProvider, GenerateRecipe, GeneratedRecipe, PythonParams},
+    generated_recipe::{GenerateRecipe, GeneratedRecipe, PythonParams},
     intermediate_backend::IntermediateBackendInstantiator,
     tools::BackendIdentifier,
     variants::NormalizedKey,
@@ -56,9 +58,18 @@ impl GenerateRecipe for ZigGenerator {
             manifest_path.clone()
         };
 
+        // Fill in name/version (and anything else the model omits) from
+        // build.zig.zon when present, mirroring the Rust backend's
+        // Cargo.toml handling.
+        let mut zon_metadata =
+            ZonMetadataProvider::new(&manifest_root, config.ignore_zon_manifest.unwrap_or(false));
+
         let mut generated_recipe =
-            GeneratedRecipe::from_model(model.clone(), &mut DefaultMetadataProvider)
-                .into_diagnostic()?;
+            GeneratedRecipe::from_model(model.clone(), &mut zon_metadata).into_diagnostic()?;
+
+        generated_recipe
+            .metadata_input_globs
+            .extend(zon_metadata.input_globs());
 
         let requirements = &mut generated_recipe.recipe.requirements;
 
@@ -577,6 +588,69 @@ mod tests {
             recipe.recipe.build.dynamic_linking.binary_relocation,
             BinaryRelocation::default(),
         );
+    }
+
+    #[tokio::test]
+    async fn test_name_and_version_fall_back_to_zon_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        fs_err::write(
+            dir.path().join("build.zig.zon"),
+            r#".{ .name = .zon_named, .version = "4.5.6" }"#,
+        )
+        .unwrap();
+
+        // No name/version in the project model at all.
+        let project_model = project_fixture!({});
+
+        let generated_recipe = ZigGenerator::default()
+            .generate_recipe(
+                &project_model,
+                &ZigBackendConfig::default(),
+                dir.path().to_path_buf(),
+                Platform::Linux64,
+                None,
+                &HashSet::new(),
+                vec![],
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect("Failed to generate recipe");
+
+        assert_eq!(
+            generated_recipe.recipe.package.name.to_string(),
+            "zon_named"
+        );
+        assert_eq!(generated_recipe.recipe.package.version.to_string(), "4.5.6");
+        assert!(
+            generated_recipe
+                .metadata_input_globs
+                .contains(&"build.zig.zon".to_string()),
+            "zon manifest must be part of the metadata fingerprint"
+        );
+
+        // With ignore-zon-manifest the same model has no name and fails.
+        let result = ZigGenerator::default()
+            .generate_recipe(
+                &project_model,
+                &ZigBackendConfig {
+                    ignore_zon_manifest: Some(true),
+                    ..Default::default()
+                },
+                dir.path().to_path_buf(),
+                Platform::Linux64,
+                None,
+                &HashSet::new(),
+                vec![],
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+        assert!(result.is_err());
     }
 
     #[test]
