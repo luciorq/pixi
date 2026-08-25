@@ -6230,6 +6230,7 @@ name = "pixi-build-zig"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "fs-err",
  "indexmap 2.14.0",
  "insta",
  "miette 7.6.0",
@@ -6240,6 +6241,8 @@ dependencies = [
  "rattler_conda_types",
  "serde",
  "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
  "tokio",
 ]
 

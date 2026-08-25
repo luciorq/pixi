@@ -94,6 +94,11 @@ pub struct ZigBackendConfig {
     /// `false` the backend emits no `-Dtarget`/`-Dcpu`/`-Doptimize` flags at
     /// all and only `extra-args` control the build. Defaults to `true`.
     pub standard_options: Option<bool>,
+    /// Ignore `build.zig.zon` and rely only on the project model for
+    /// package metadata. By default the backend fills in a missing
+    /// `[package]` name/version from the zon manifest's `.name`/`.version`.
+    #[serde(default)]
+    pub ignore_zon_manifest: Option<bool>,
     /// Whether rattler-build relocates binaries (rpath/install-name
     /// rewriting) after the build. When unset, relocation is enabled except
     /// when cross-compiling for macOS from a non-mac machine: the Mach-O
@@ -152,6 +157,9 @@ impl BackendConfig for ZigBackendConfig {
                 .clone()
                 .or_else(|| self.macos_deployment_target.clone()),
             standard_options: target_config.standard_options.or(self.standard_options),
+            ignore_zon_manifest: target_config
+                .ignore_zon_manifest
+                .or(self.ignore_zon_manifest),
             binary_relocation: target_config.binary_relocation.or(self.binary_relocation),
             export_c_toolchain: target_config.export_c_toolchain.or(self.export_c_toolchain),
         })

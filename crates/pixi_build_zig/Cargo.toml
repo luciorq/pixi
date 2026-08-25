@@ -12,6 +12,7 @@ dist = false
 
 [dependencies]
 async-trait = { workspace = true }
+fs-err = { workspace = true }
 indexmap = { workspace = true }
 miette = { workspace = true }
 minijinja = { workspace = true, features = ["json"] }
@@ -20,11 +21,13 @@ pixi_build_types = { workspace = true }
 rattler_build_recipe = { workspace = true }
 rattler_conda_types = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 
 [dev-dependencies]
 insta = { workspace = true, features = ["filters", "redactions", "yaml"] }
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 
 [features]
 default = ["rustls"]

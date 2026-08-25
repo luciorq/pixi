@@ -52,6 +52,24 @@ version = "0.1.0"
 backend = { name = "pixi-build-zig", version = "*" }
 ```
 
+### Metadata from build.zig.zon
+
+When `[package]` omits `name` or `version`, the backend reads them from
+`build.zig.zon` (`.name` / `.version`) next to the manifest — both the
+zig ≥ 0.14 enum-literal form (`.name = .my_package`) and the older string
+form are understood. A project with a zon manifest can therefore keep its
+`[package]` table empty:
+
+```toml
+[package]
+
+[package.build]
+backend = { name = "pixi-build-zig", version = "*" }
+```
+
+Note that zon names are zig identifiers, so they cannot contain hyphens.
+Set `ignore-zon-manifest = true` in the config to opt out.
+
 ### build.zig Requirements
 
 The backend assumes the ecosystem convention that `build.zig` calls
@@ -190,6 +208,14 @@ Minimum macOS version appended to `*-macos` triples, e.g. `11.0`.
 Set to `false` when the project's `build.zig` does not use
 `b.standardTargetOptions`/`b.standardOptimizeOption`; the backend then emits
 no `-D` flags at all and only `extra-args` control the build.
+
+### `ignore-zon-manifest`
+
+- **Type**: `Boolean`
+- **Default**: `false`
+
+Ignore `build.zig.zon` and rely only on the `pixi.toml` project model for
+package metadata (see "Metadata from build.zig.zon" above).
 
 ### `binary-relocation`
 
