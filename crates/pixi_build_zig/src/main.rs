@@ -142,11 +142,11 @@ impl GenerateRecipe for ZigGenerator {
         _editable: bool,
     ) -> miette::Result<Vec<String>> {
         Ok([
-            // Zig sources
+            // Zig sources (this also covers build.zig files everywhere)
             "**/*.zig",
-            // Zig build files
             "build.zig",
-            "build.zig.zon",
+            // Zon manifests, including those of vendored path dependencies
+            "**/build.zig.zon",
         ]
         .iter()
         .map(|s| s.to_string())
@@ -677,6 +677,6 @@ mod tests {
 
         assert!(contains("**/*.zig"));
         assert!(contains("build.zig"));
-        assert!(contains("build.zig.zon"));
+        assert!(contains("**/build.zig.zon"));
     }
 }
