@@ -288,10 +288,22 @@ env = { ZIG_VERBOSE = "1" }
 Extra input globs considered for rebuild detection, in addition to the
 defaults (`**/*.zig`, `build.zig`, `build.zig.zon`).
 
+## build.zig.zon dependencies
+
+Path dependencies (`.my_dep = .{ .path = "vendor/my_dep" }`) are fully
+supported and hermetic — vendoring dependencies this way is the
+recommended approach for conda packages. The backend watches every
+`build.zig.zon` in the source tree, so edits to vendored manifests trigger
+rebuilds.
+
+URL dependencies also work: the build environment is not
+network-sandboxed, so zig fetches them during the build into the
+work-directory cache, and the zon `hash` field still pins the content.
+Note the trade-off: the build then depends on the URL being reachable, so
+prefer vendoring for reproducibility.
+
 ## Limitations
 
-- Dependencies declared in `build.zig.zon` must be available offline (e.g.
-  vendored) because the build environment has no network access.
 - Cross-compiling to macOS system frameworks requires an SDK; plain
   executables and libraries work without one.
 - When cross-compiling for macOS from a non-mac machine, binary relocation
