@@ -37,7 +37,9 @@ The backend automatically generates conda packages from Zig projects by:
   `CXX="zig c++ ..."`, `AR="zig ar"` and `RANLIB="zig ranlib"` so build steps
   that spawn external tools compile and link with zig for the same target
 - **Hermetic caches**: keeps `ZIG_GLOBAL_CACHE_DIR`/`ZIG_LOCAL_CACHE_DIR`
-  inside the work directory
+  inside the work directory, overriding the HOME-based default the
+  conda-forge zig activation sets; provide either variable through the
+  `env` option to take over
 
 ## Basic Usage
 

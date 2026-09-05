@@ -25,6 +25,14 @@ pub struct BuildScriptContext {
     /// points at the `Library` subdirectory of the prefix, per conda
     /// convention, regardless of the build machine.
     pub host_is_windows: bool,
+
+    /// Export ZIG_GLOBAL_CACHE_DIR / ZIG_LOCAL_CACHE_DIR pointing into the
+    /// work directory. False when the user provides the variable through
+    /// the backend's `env` config; exported unconditionally otherwise,
+    /// because the conda-forge zig activation pre-sets a HOME-based global
+    /// cache that would defeat hermetic builds.
+    pub export_global_cache: bool,
+    pub export_local_cache: bool,
 }
 
 impl BuildScriptContext {
@@ -50,6 +58,8 @@ mod test {
             cc_flags,
             is_bash,
             host_is_windows,
+            export_global_cache: true,
+            export_local_cache: true,
         }
         .render()
     }
@@ -57,8 +67,8 @@ mod test {
     #[test]
     fn test_build_script_bash() {
         insta::assert_snapshot!(render(true, false, None), @r###"
-        export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$SRC_DIR/.zig-global-cache}"
-        export ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-$SRC_DIR/.zig-local-cache}"
+        export ZIG_GLOBAL_CACHE_DIR="$SRC_DIR/.zig-global-cache"
+        export ZIG_LOCAL_CACHE_DIR="$SRC_DIR/.zig-local-cache"
 
         mkdir -p "$PREFIX"
         zig build --build-file "my-source-dir/build.zig" --prefix "$PREFIX" --search-prefix "$PREFIX" -Dtarget=x86_64-linux-gnu.2.28 -Dcpu=baseline -Doptimize=ReleaseFast
@@ -68,8 +78,8 @@ mod test {
     #[test]
     fn test_build_script_cmdexe() {
         insta::assert_snapshot!(render(false, true, None), @r###"
-        if not defined ZIG_GLOBAL_CACHE_DIR SET "ZIG_GLOBAL_CACHE_DIR=%SRC_DIR%\.zig-global-cache"
-        if not defined ZIG_LOCAL_CACHE_DIR SET "ZIG_LOCAL_CACHE_DIR=%SRC_DIR%\.zig-local-cache"
+        SET "ZIG_GLOBAL_CACHE_DIR=%SRC_DIR%\.zig-global-cache"
+        SET "ZIG_LOCAL_CACHE_DIR=%SRC_DIR%\.zig-local-cache"
 
         if not exist "%LIBRARY_PREFIX%" mkdir "%LIBRARY_PREFIX%"
         zig build --build-file "my-source-dir\build.zig" --prefix "%LIBRARY_PREFIX%" --search-prefix "%LIBRARY_PREFIX%" -Dtarget=x86_64-linux-gnu.2.28 -Dcpu=baseline -Doptimize=ReleaseFast
@@ -81,8 +91,8 @@ mod test {
     fn test_build_script_c_toolchain_bash() {
         let flags = String::from(" -target x86_64-linux-gnu.2.28 -mcpu=baseline");
         insta::assert_snapshot!(render(true, false, Some(flags)), @r###"
-        export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$SRC_DIR/.zig-global-cache}"
-        export ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-$SRC_DIR/.zig-local-cache}"
+        export ZIG_GLOBAL_CACHE_DIR="$SRC_DIR/.zig-global-cache"
+        export ZIG_LOCAL_CACHE_DIR="$SRC_DIR/.zig-local-cache"
 
         export CC="zig cc -target x86_64-linux-gnu.2.28 -mcpu=baseline"
         export CXX="zig c++ -target x86_64-linux-gnu.2.28 -mcpu=baseline"
@@ -100,8 +110,8 @@ mod test {
     fn test_build_script_c_toolchain_cmdexe() {
         let flags = String::from(" -target x86_64-windows-gnu -mcpu=baseline");
         insta::assert_snapshot!(render(false, true, Some(flags)), @r###"
-        if not defined ZIG_GLOBAL_CACHE_DIR SET "ZIG_GLOBAL_CACHE_DIR=%SRC_DIR%\.zig-global-cache"
-        if not defined ZIG_LOCAL_CACHE_DIR SET "ZIG_LOCAL_CACHE_DIR=%SRC_DIR%\.zig-local-cache"
+        SET "ZIG_GLOBAL_CACHE_DIR=%SRC_DIR%\.zig-global-cache"
+        SET "ZIG_LOCAL_CACHE_DIR=%SRC_DIR%\.zig-local-cache"
 
         SET "CC=zig cc -target x86_64-windows-gnu -mcpu=baseline"
         SET "CXX=zig c++ -target x86_64-windows-gnu -mcpu=baseline"
@@ -122,12 +132,28 @@ mod test {
         // the install prefix must still follow the conda Library\ convention
         // of the target platform.
         insta::assert_snapshot!(render(true, true, None), @r###"
-        export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$SRC_DIR/.zig-global-cache}"
-        export ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-$SRC_DIR/.zig-local-cache}"
+        export ZIG_GLOBAL_CACHE_DIR="$SRC_DIR/.zig-global-cache"
+        export ZIG_LOCAL_CACHE_DIR="$SRC_DIR/.zig-local-cache"
 
         mkdir -p "$PREFIX/Library"
         zig build --build-file "my-source-dir/build.zig" --prefix "$PREFIX/Library" --search-prefix "$PREFIX/Library" -Dtarget=x86_64-linux-gnu.2.28 -Dcpu=baseline -Doptimize=ReleaseFast
         "###);
+    }
+
+    #[test]
+    fn test_build_script_user_cache_env_suppresses_exports() {
+        let script = super::BuildScriptContext {
+            source_dir: String::from("my-source-dir"),
+            args: vec![],
+            cc_flags: None,
+            is_bash: true,
+            host_is_windows: false,
+            export_global_cache: false,
+            export_local_cache: true,
+        }
+        .render();
+        assert!(!script.contains("ZIG_GLOBAL_CACHE_DIR"));
+        assert!(script.contains(r#"export ZIG_LOCAL_CACHE_DIR="$SRC_DIR/.zig-local-cache""#));
     }
 
     #[test]
@@ -138,11 +164,13 @@ mod test {
             cc_flags: None,
             is_bash: true,
             host_is_windows: false,
+            export_global_cache: true,
+            export_local_cache: true,
         }
         .render();
         insta::assert_snapshot!(script, @r###"
-        export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$SRC_DIR/.zig-global-cache}"
-        export ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-$SRC_DIR/.zig-local-cache}"
+        export ZIG_GLOBAL_CACHE_DIR="$SRC_DIR/.zig-global-cache"
+        export ZIG_LOCAL_CACHE_DIR="$SRC_DIR/.zig-local-cache"
 
         mkdir -p "$PREFIX"
         zig build --build-file "my-source-dir/build.zig" --prefix "$PREFIX" --search-prefix "$PREFIX"

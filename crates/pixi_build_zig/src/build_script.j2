@@ -1,6 +1,8 @@
 {#- Cache dirs: keep zig's caches inside the work directory so builds stay
-    hermetic and incremental rebuilds reuse them. A user-provided value (via
-    the `env` config option or the calling environment) wins.
+    hermetic and incremental rebuilds reuse them. Exported unconditionally
+    because the conda-forge zig activation pre-sets a HOME-based
+    ZIG_GLOBAL_CACHE_DIR; only an explicit value in the backend's `env`
+    config suppresses the export (the generator checks the config keys).
     C toolchain: route everything the build spawns (configure/make steps,
     dependency build scripts probing $CC) through zig's C toolchain,
     targeting the same triple as the zig build itself. CC_FOR_BUILD stays
@@ -24,12 +26,11 @@ SET "{{ key }}={{ value }}"
 {%- else -%}
 {%- set install_prefix = env("PREFIX") -%}
 {%- endif -%}
-{%- if is_bash -%}
-export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$SRC_DIR/.zig-global-cache}"
-export ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-$SRC_DIR/.zig-local-cache}"
-{%- else -%}
-if not defined ZIG_GLOBAL_CACHE_DIR SET "ZIG_GLOBAL_CACHE_DIR={{ env("SRC_DIR") }}\.zig-global-cache"
-if not defined ZIG_LOCAL_CACHE_DIR SET "ZIG_LOCAL_CACHE_DIR={{ env("SRC_DIR") }}\.zig-local-cache"
+{%- if export_global_cache %}
+{{ export("ZIG_GLOBAL_CACHE_DIR", env("SRC_DIR") ~ ("/" if is_bash else "\\") ~ ".zig-global-cache") }}
+{%- endif %}
+{%- if export_local_cache %}
+{{ export("ZIG_LOCAL_CACHE_DIR", env("SRC_DIR") ~ ("/" if is_bash else "\\") ~ ".zig-local-cache") }}
 {%- endif %}
 {% if cc_flags is not none %}
 {{ export("CC", "zig cc" ~ cc_flags) }}

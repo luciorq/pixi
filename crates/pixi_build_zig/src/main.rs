@@ -102,6 +102,11 @@ impl GenerateRecipe for ZigGenerator {
             cc_flags,
             is_bash: !Platform::current().is_windows(),
             host_is_windows: host_platform.is_windows(),
+            // An explicit value in the config's `env` wins; otherwise export
+            // unconditionally — the conda-forge zig activation pre-sets a
+            // HOME-based global cache that would defeat hermetic builds.
+            export_global_cache: !config.env.contains_key("ZIG_GLOBAL_CACHE_DIR"),
+            export_local_cache: !config.env.contains_key("ZIG_LOCAL_CACHE_DIR"),
         }
         .render();
 
@@ -664,6 +669,46 @@ mod tests {
             )
             .await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_user_cache_env_suppresses_cache_export() {
+        let project_model = project_fixture!({
+            "name": "foobar",
+            "version": "0.1.0",
+        });
+
+        let env = IndexMap::from([(
+            "ZIG_GLOBAL_CACHE_DIR".to_string(),
+            "/shared/zig-cache".to_string(),
+        )]);
+
+        let generated_recipe = ZigGenerator::default()
+            .generate_recipe(
+                &project_model,
+                &ZigBackendConfig {
+                    env,
+                    ..Default::default()
+                },
+                PathBuf::from("."),
+                Platform::Linux64,
+                None,
+                &HashSet::new(),
+                vec![],
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect("Failed to generate recipe");
+
+        let content = script_content(&generated_recipe);
+        assert!(
+            !content.contains("export ZIG_GLOBAL_CACHE_DIR"),
+            "user-provided cache dir must suppress the script export"
+        );
+        assert!(content.contains("export ZIG_LOCAL_CACHE_DIR"));
     }
 
     #[test]
