@@ -33,6 +33,13 @@ pub struct BuildScriptContext {
     /// cache that would defeat hermetic builds.
     pub export_global_cache: bool,
     pub export_local_cache: bool,
+
+    /// Emit a build-time warning when a shared libc++ sits in
+    /// `$BUILD_PREFIX/lib`: conda-forge's zig is patched to prefer it over
+    /// the bundled static libc++, which silently gives C++ artifacts an
+    /// undeclared runtime dependency. The probe only fires when target and
+    /// build arch match, so this is set for native builds only. Bash only.
+    pub warn_shared_libcxx: bool,
 }
 
 impl BuildScriptContext {
@@ -60,6 +67,7 @@ mod test {
             host_is_windows,
             export_global_cache: true,
             export_local_cache: true,
+            warn_shared_libcxx: false,
         }
         .render()
     }
@@ -150,6 +158,7 @@ mod test {
             host_is_windows: false,
             export_global_cache: false,
             export_local_cache: true,
+            warn_shared_libcxx: false,
         }
         .render();
         assert!(!script.contains("ZIG_GLOBAL_CACHE_DIR"));
@@ -166,6 +175,7 @@ mod test {
             host_is_windows: false,
             export_global_cache: true,
             export_local_cache: true,
+            warn_shared_libcxx: false,
         }
         .render();
         insta::assert_snapshot!(script, @r###"
@@ -175,5 +185,30 @@ mod test {
         mkdir -p "$PREFIX"
         zig build --build-file "my-source-dir/build.zig" --prefix "$PREFIX" --search-prefix "$PREFIX"
         "###);
+    }
+
+    #[test]
+    fn test_build_script_shared_libcxx_warning() {
+        let render = |is_bash: bool| {
+            super::BuildScriptContext {
+                source_dir: String::from("my-source-dir"),
+                args: vec![],
+                cc_flags: None,
+                is_bash,
+                host_is_windows: !is_bash,
+                export_global_cache: true,
+                export_local_cache: true,
+                warn_shared_libcxx: true,
+            }
+            .render()
+        };
+        let bash = render(true);
+        assert!(bash.contains(r#"for f in "$BUILD_PREFIX"/lib/libc++.so* "$BUILD_PREFIX"/lib/libc++.*dylib; do"#));
+        assert!(bash.contains("WARNING: shared libc++ found"));
+        // The warning precedes the build so it is visible even when the
+        // build fails.
+        assert!(bash.find("WARNING").unwrap() < bash.find("zig build").unwrap());
+        // cmd.exe scripts carry no probe.
+        assert!(!render(false).contains("libc++"));
     }
 }

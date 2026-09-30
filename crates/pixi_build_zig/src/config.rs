@@ -113,6 +113,13 @@ pub struct ZigBackendConfig {
     /// compiled inside `build.zig` always use zig's bundled clang regardless
     /// of this setting. Defaults to `true`.
     pub export_c_toolchain: Option<bool>,
+    /// The conda match spec the backend adds to the build requirements to
+    /// provide the zig toolchain. Defaults to `zig` (conda-forge). Point it
+    /// at another package — e.g. one that repackages the official
+    /// ziglang.org binaries without conda-forge's patches — to build with a
+    /// different toolchain; it must put a `zig` executable on `PATH`. A
+    /// version constraint is allowed (`"zig-upstream ==0.16.0"`).
+    pub toolchain_package: Option<String>,
 }
 
 impl BackendConfig for ZigBackendConfig {
@@ -162,6 +169,10 @@ impl BackendConfig for ZigBackendConfig {
                 .or(self.ignore_zon_manifest),
             binary_relocation: target_config.binary_relocation.or(self.binary_relocation),
             export_c_toolchain: target_config.export_c_toolchain.or(self.export_c_toolchain),
+            toolchain_package: target_config
+                .toolchain_package
+                .clone()
+                .or_else(|| self.toolchain_package.clone()),
         })
     }
 }
@@ -190,9 +201,14 @@ mod tests {
             "windows-abi": "msvc",
             "macos-deployment-target": "11.0",
             "standard-options": true,
+            "toolchain-package": "zig-upstream ==0.16.0",
         });
         let config = serde_json::from_value::<ZigBackendConfig>(json_data).unwrap();
         assert_eq!(config.optimize, Some(ZigOptimize::ReleaseSafe));
+        assert_eq!(
+            config.toolchain_package.as_deref(),
+            Some("zig-upstream ==0.16.0")
+        );
         assert_eq!(config.windows_abi, Some(WindowsAbi::Msvc));
         assert_eq!(config.glibc_version.as_deref(), Some("2.34"));
     }

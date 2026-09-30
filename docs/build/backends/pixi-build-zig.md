@@ -254,6 +254,27 @@ during cross builds. This routes configure/make steps and dependency build
 scripts through zig. Note that C/C++ sources compiled inside `build.zig`
 always use zig's bundled clang regardless of this setting.
 
+### `toolchain-package`
+
+- **Type**: `String` (a conda match spec)
+- **Default**: `zig`
+
+The package the backend adds to the build requirements to provide the zig
+toolchain. It must put a `zig` executable on `PATH`. Use it to build with a
+toolchain other than conda-forge's `zig`, for example a package that
+repackages the official ziglang.org binaries without conda-forge's patches
+(see "conda-forge zig patches" under Limitations). A version constraint is
+allowed:
+
+```toml
+[package.build.config]
+toolchain-package = "zig-upstream ==0.16.0"
+```
+
+Note that a user-declared `zig` entry in `[package.build-dependencies]`
+still pulls conda-forge `zig` alongside the substitute; drop it when
+switching toolchains.
+
 ### `extra-args`
 
 - **Type**: `Array<String>`
@@ -305,6 +326,19 @@ Note the trade-off: the build then depends on the URL being reachable, so
 prefer vendoring for reproducibility.
 
 ## Limitations
+
+- **conda-forge zig patches.** The conda-forge `zig` package is built from
+  source with patches that change what the compiler emits. Two matter for
+  packages: on linux every dynamically linked binary gets extra glibc
+  `NEEDED` entries (`libm`, `libresolv`, `libpthread`, `libdl`, `librt`,
+  `libutil`; harmless), and `zig c++` prefers a *shared* libc++ over its
+  bundled static one whenever a `libc++.so*`/`libc++*.dylib` is present in
+  the build prefix. The latter silently gives C++ artifacts a runtime
+  dependency on `libcxx` that the package does not declare. The backend
+  prints a warning at build time when it detects this on a native build;
+  declare `libcxx` as a host dependency (its run-exports cover the runtime)
+  or keep it out of build dependencies. To build with the unpatched
+  upstream compiler, see `toolchain-package`.
 
 - Cross-compiling to macOS system frameworks requires an SDK; plain
   executables and libraries work without one.

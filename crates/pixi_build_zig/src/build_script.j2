@@ -40,6 +40,17 @@ SET "{{ key }}={{ value }}"
 {{ export("CC_FOR_BUILD", "zig cc") }}
 {{ export("CXX_FOR_BUILD", "zig c++") }}
 {% endif %}
+{%- if warn_shared_libcxx and is_bash %}
+
+{#- conda-forge's zig is patched to prefer a shared libc++ found next to its
+    lib dir over the bundled static one (see the backend docs, Limitations). -#}
+for f in "$BUILD_PREFIX"/lib/libc++.so* "$BUILD_PREFIX"/lib/libc++.*dylib; do
+  if [ -e "$f" ]; then
+    echo "WARNING: shared libc++ found in the build prefix ($f): conda-forge's zig prefers it over its bundled static libc++, so C++ artifacts will depend on it at runtime without declaring it. Declare 'libcxx' as a host dependency or keep it out of build dependencies." >&2
+    break
+  fi
+done
+{% endif %}
 {% if is_bash -%}
 mkdir -p "{{ install_prefix }}"
 {%- else -%}

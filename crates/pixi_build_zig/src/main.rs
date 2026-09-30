@@ -6,7 +6,7 @@ mod target;
 use build_script::BuildScriptContext;
 use config::ZigBackendConfig;
 use metadata::ZonMetadataProvider;
-use miette::IntoDiagnostic;
+use miette::{Context, IntoDiagnostic};
 use pixi_build_backend::{
     generated_recipe::{GenerateRecipe, GeneratedRecipe, PythonParams},
     intermediate_backend::IntermediateBackendInstantiator,
@@ -75,11 +75,17 @@ impl GenerateRecipe for ZigGenerator {
 
         // The zig compiler runs on the build machine, so it belongs in the
         // build requirements. A user-pinned `zig` build dependency coexists
-        // with this spec; the solver intersects them.
-        requirements.build.push(Item::Value(Value::new_concrete(
-            SerializableMatchSpec::from("zig"),
-            None,
-        )));
+        // with this spec; the solver intersects them. `toolchain-package`
+        // substitutes another provider of the `zig` executable (e.g. a
+        // repackaged upstream binary without conda-forge's patches).
+        let toolchain_spec = config.toolchain_package.as_deref().unwrap_or("zig");
+        let toolchain_spec: SerializableMatchSpec = toolchain_spec
+            .parse()
+            .into_diagnostic()
+            .wrap_err_with(|| format!("invalid `toolchain-package` match spec: {toolchain_spec:?}"))?;
+        requirements
+            .build
+            .push(Item::Value(Value::new_concrete(toolchain_spec, None)));
 
         // Derive the `-Dtarget`/`-Dcpu`/`-Doptimize` flags from the host
         // platform (= the platform the package is built FOR). Emitting an
@@ -107,6 +113,10 @@ impl GenerateRecipe for ZigGenerator {
             // HOME-based global cache that would defeat hermetic builds.
             export_global_cache: !config.env.contains_key("ZIG_GLOBAL_CACHE_DIR"),
             export_local_cache: !config.env.contains_key("ZIG_LOCAL_CACHE_DIR"),
+            // conda-forge's zig prefers a shared libc++ found next to its own
+            // lib dir over the bundled static one. That probe is only active
+            // when target and build arch match, i.e. native builds here.
+            warn_shared_libcxx: host_platform == Platform::current(),
         }
         .render();
 
@@ -320,6 +330,119 @@ mod tests {
             zig_count, 2,
             "expected user and backend zig in build requirements"
         );
+    }
+
+    #[tokio::test]
+    async fn test_toolchain_package_replaces_zig_requirement() {
+        let project_model = project_fixture!({
+            "name": "foobar",
+            "version": "0.1.0",
+        });
+
+        let generated_recipe = ZigGenerator::default()
+            .generate_recipe(
+                &project_model,
+                &ZigBackendConfig {
+                    toolchain_package: Some("zig-upstream ==0.16.0".to_string()),
+                    ..Default::default()
+                },
+                PathBuf::from("."),
+                Platform::Linux64,
+                None,
+                &HashSet::new(),
+                vec![],
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect("Failed to generate recipe");
+
+        let build_specs: Vec<String> = generated_recipe
+            .recipe
+            .requirements
+            .build
+            .iter()
+            .filter_map(|item| item.as_value().and_then(|v| v.as_concrete()))
+            .map(|spec| spec.0.to_string())
+            .collect();
+        assert_eq!(build_specs, vec!["zig-upstream ==0.16.0".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_invalid_toolchain_package_is_an_error() {
+        let project_model = project_fixture!({
+            "name": "foobar",
+            "version": "0.1.0",
+        });
+
+        let result = ZigGenerator::default()
+            .generate_recipe(
+                &project_model,
+                &ZigBackendConfig {
+                    toolchain_package: Some("not a valid ==spec==".to_string()),
+                    ..Default::default()
+                },
+                PathBuf::from("."),
+                Platform::Linux64,
+                None,
+                &HashSet::new(),
+                vec![],
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+        let err = match result {
+            Err(err) => err,
+            Ok(_) => panic!("invalid spec must be rejected"),
+        };
+        assert!(format!("{err:?}").contains("toolchain-package"));
+    }
+
+    #[tokio::test]
+    async fn test_shared_libcxx_warning_only_on_native_builds() {
+        let project_model = project_fixture!({
+            "name": "foobar",
+            "version": "0.1.0",
+        });
+
+        for (platform, expected) in [
+            (Platform::current(), true),
+            (
+                if Platform::current() == Platform::Linux64 {
+                    Platform::LinuxAarch64
+                } else {
+                    Platform::Linux64
+                },
+                false,
+            ),
+        ] {
+            let generated_recipe = ZigGenerator::default()
+                .generate_recipe(
+                    &project_model,
+                    &ZigBackendConfig::default(),
+                    PathBuf::from("."),
+                    platform,
+                    None,
+                    &HashSet::new(),
+                    vec![],
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .await
+                .expect("Failed to generate recipe");
+            let content = script_content(&generated_recipe);
+            assert_eq!(
+                content.contains("shared libc++"),
+                expected,
+                "platform {platform}: libc++ warning presence"
+            );
+        }
     }
 
     #[tokio::test]
