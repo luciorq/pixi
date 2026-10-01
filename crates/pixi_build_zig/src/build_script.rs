@@ -203,7 +203,9 @@ mod test {
             .render()
         };
         let bash = render(true);
-        assert!(bash.contains(r#"for f in "$BUILD_PREFIX"/lib/libc++.so* "$BUILD_PREFIX"/lib/libc++.*dylib; do"#));
+        assert!(bash.contains(
+            r#"for f in "$BUILD_PREFIX"/lib/libc++.so* "$BUILD_PREFIX"/lib/libc++.*dylib; do"#
+        ));
         assert!(bash.contains("WARNING: shared libc++ found"));
         // The warning precedes the build so it is visible even when the
         // build fails.

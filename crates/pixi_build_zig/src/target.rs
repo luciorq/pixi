@@ -8,7 +8,7 @@
 //! that can crash with illegal instructions on older machines.
 
 use miette::miette;
-use rattler_conda_types::Platform;
+use rattler_conda_types::Subdir;
 
 use crate::config::ZigBackendConfig;
 
@@ -20,7 +20,7 @@ const DEFAULT_GLIBC_VERSION: &str = "2.28";
 ///
 /// Returns an error for platforms zig has no obvious triple for; users can
 /// always take over with the `target` config option.
-pub fn zig_triple(host_platform: Platform, config: &ZigBackendConfig) -> miette::Result<String> {
+pub fn zig_triple(host_platform: Subdir, config: &ZigBackendConfig) -> miette::Result<String> {
     let glibc = match config.glibc_version.as_deref() {
         Some("") => String::new(),
         Some(version) => format!(".{version}"),
@@ -33,26 +33,26 @@ pub fn zig_triple(host_platform: Platform, config: &ZigBackendConfig) -> miette:
     };
 
     let triple = match host_platform {
-        Platform::Linux64 => format!("x86_64-linux-gnu{glibc}"),
-        Platform::LinuxAarch64 => format!("aarch64-linux-gnu{glibc}"),
-        Platform::Linux32 => format!("x86-linux-gnu{glibc}"),
-        Platform::LinuxArmV6l | Platform::LinuxArmV7l => {
+        Subdir::Linux64 => format!("x86_64-linux-gnu{glibc}"),
+        Subdir::LinuxAarch64 => format!("aarch64-linux-gnu{glibc}"),
+        Subdir::Linux32 => format!("x86-linux-gnu{glibc}"),
+        Subdir::LinuxArmV6l | Subdir::LinuxArmV7l => {
             format!("arm-linux-gnueabihf{glibc}")
         }
-        Platform::LinuxPpc64le => format!("powerpc64le-linux-gnu{glibc}"),
-        Platform::LinuxPpc64 => format!("powerpc64-linux-gnu{glibc}"),
-        Platform::LinuxS390X => format!("s390x-linux-gnu{glibc}"),
-        Platform::LinuxRiscv64 => format!("riscv64-linux-gnu{glibc}"),
-        Platform::LinuxLoongArch64 => format!("loongarch64-linux-gnu{glibc}"),
-        Platform::Osx64 => format!("x86_64-macos{macos}"),
-        Platform::OsxArm64 => format!("aarch64-macos{macos}"),
-        Platform::Win64 => format!("x86_64-windows-{}", windows_abi.as_str()),
-        Platform::WinArm64 => format!("aarch64-windows-{}", windows_abi.as_str()),
-        Platform::Win32 => format!("x86-windows-{}", windows_abi.as_str()),
-        Platform::EmscriptenWasm32 => "wasm32-emscripten".to_string(),
-        Platform::WasiWasm32 => "wasm32-wasi".to_string(),
-        Platform::FreeBsd64 => "x86_64-freebsd".to_string(),
-        Platform::FreeBsdArm64 => "aarch64-freebsd".to_string(),
+        Subdir::LinuxPpc64le => format!("powerpc64le-linux-gnu{glibc}"),
+        Subdir::LinuxPpc64 => format!("powerpc64-linux-gnu{glibc}"),
+        Subdir::LinuxS390X => format!("s390x-linux-gnu{glibc}"),
+        Subdir::LinuxRiscv64 => format!("riscv64-linux-gnu{glibc}"),
+        Subdir::LinuxLoongArch64 => format!("loongarch64-linux-gnu{glibc}"),
+        Subdir::Osx64 => format!("x86_64-macos{macos}"),
+        Subdir::OsxArm64 => format!("aarch64-macos{macos}"),
+        Subdir::Win64 => format!("x86_64-windows-{}", windows_abi.as_str()),
+        Subdir::WinArm64 => format!("aarch64-windows-{}", windows_abi.as_str()),
+        Subdir::Win32 => format!("x86-windows-{}", windows_abi.as_str()),
+        Subdir::EmscriptenWasm32 => "wasm32-emscripten".to_string(),
+        Subdir::WasiWasm32 => "wasm32-wasi".to_string(),
+        Subdir::FreeBsd64 => "x86_64-freebsd".to_string(),
+        Subdir::FreeBsdArm64 => "aarch64-freebsd".to_string(),
         other => {
             return Err(miette!(
                 "pixi-build-zig does not know a zig target triple for platform `{other}`; \
@@ -70,7 +70,7 @@ pub fn zig_triple(host_platform: Platform, config: &ZigBackendConfig) -> miette:
 /// These are clang-style flags (`-target`, `-mcpu`), not `zig build` `-D`
 /// options, because they are consumed by subprocesses the build spawns
 /// (configure/make scripts probing `$CC`), not by `build.zig`.
-pub fn zig_cc_flags(host_platform: Platform, config: &ZigBackendConfig) -> miette::Result<String> {
+pub fn zig_cc_flags(host_platform: Subdir, config: &ZigBackendConfig) -> miette::Result<String> {
     let triple = match config.target.as_deref() {
         Some("native") => return Ok(String::new()),
         Some(triple) => triple.to_string(),
@@ -86,7 +86,7 @@ pub fn zig_cc_flags(host_platform: Platform, config: &ZigBackendConfig) -> miett
 /// projects whose `build.zig` calls `b.standardTargetOptions` and
 /// `b.standardOptimizeOption`.
 pub fn zig_build_args(
-    host_platform: Platform,
+    host_platform: Subdir,
     config: &ZigBackendConfig,
 ) -> miette::Result<Vec<String>> {
     if !config.standard_options.unwrap_or(true) {
@@ -131,15 +131,15 @@ mod tests {
     #[test]
     fn test_linux_triples_pin_glibc() {
         assert_eq!(
-            zig_triple(Platform::Linux64, &config()).unwrap(),
+            zig_triple(Subdir::Linux64, &config()).unwrap(),
             "x86_64-linux-gnu.2.28"
         );
         assert_eq!(
-            zig_triple(Platform::LinuxAarch64, &config()).unwrap(),
+            zig_triple(Subdir::LinuxAarch64, &config()).unwrap(),
             "aarch64-linux-gnu.2.28"
         );
         assert_eq!(
-            zig_triple(Platform::LinuxPpc64le, &config()).unwrap(),
+            zig_triple(Subdir::LinuxPpc64le, &config()).unwrap(),
             "powerpc64le-linux-gnu.2.28"
         );
     }
@@ -151,7 +151,7 @@ mod tests {
             ..config()
         };
         assert_eq!(
-            zig_triple(Platform::Linux64, &cfg).unwrap(),
+            zig_triple(Subdir::Linux64, &cfg).unwrap(),
             "x86_64-linux-gnu.2.34"
         );
 
@@ -160,7 +160,7 @@ mod tests {
             ..config()
         };
         assert_eq!(
-            zig_triple(Platform::Linux64, &cfg).unwrap(),
+            zig_triple(Subdir::Linux64, &cfg).unwrap(),
             "x86_64-linux-gnu"
         );
     }
@@ -168,11 +168,11 @@ mod tests {
     #[test]
     fn test_windows_defaults_to_gnu_abi() {
         assert_eq!(
-            zig_triple(Platform::Win64, &config()).unwrap(),
+            zig_triple(Subdir::Win64, &config()).unwrap(),
             "x86_64-windows-gnu"
         );
         assert_eq!(
-            zig_triple(Platform::WinArm64, &config()).unwrap(),
+            zig_triple(Subdir::WinArm64, &config()).unwrap(),
             "aarch64-windows-gnu"
         );
 
@@ -181,7 +181,7 @@ mod tests {
             ..config()
         };
         assert_eq!(
-            zig_triple(Platform::Win64, &cfg).unwrap(),
+            zig_triple(Subdir::Win64, &cfg).unwrap(),
             "x86_64-windows-msvc"
         );
     }
@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn test_macos_deployment_target_suffix() {
         assert_eq!(
-            zig_triple(Platform::OsxArm64, &config()).unwrap(),
+            zig_triple(Subdir::OsxArm64, &config()).unwrap(),
             "aarch64-macos"
         );
         let cfg = ZigBackendConfig {
@@ -197,20 +197,20 @@ mod tests {
             ..config()
         };
         assert_eq!(
-            zig_triple(Platform::OsxArm64, &cfg).unwrap(),
+            zig_triple(Subdir::OsxArm64, &cfg).unwrap(),
             "aarch64-macos.11.0"
         );
     }
 
     #[test]
     fn test_unknown_platform_is_an_error() {
-        let err = zig_triple(Platform::ZosZ, &config()).unwrap_err();
+        let err = zig_triple(Subdir::ZosZ, &config()).unwrap_err();
         assert!(err.to_string().contains("zos-z"), "got: {err}");
     }
 
     #[test]
     fn test_build_args_defaults() {
-        let args = zig_build_args(Platform::Linux64, &config()).unwrap();
+        let args = zig_build_args(Subdir::Linux64, &config()).unwrap();
         assert_eq!(
             args,
             vec![
@@ -228,7 +228,7 @@ mod tests {
             optimize: Some(ZigOptimize::ReleaseSafe),
             ..config()
         };
-        let args = zig_build_args(Platform::Linux64, &cfg).unwrap();
+        let args = zig_build_args(Subdir::Linux64, &cfg).unwrap();
         assert_eq!(args, vec!["-Doptimize=ReleaseSafe"]);
     }
 
@@ -239,7 +239,7 @@ mod tests {
             cpu: Some("x86_64_v2".to_string()),
             ..config()
         };
-        let args = zig_build_args(Platform::Linux64, &cfg).unwrap();
+        let args = zig_build_args(Subdir::Linux64, &cfg).unwrap();
         assert_eq!(
             args,
             vec![
@@ -253,14 +253,14 @@ mod tests {
     #[test]
     fn test_cc_flags_follow_target() {
         assert_eq!(
-            zig_cc_flags(Platform::Linux64, &config()).unwrap(),
+            zig_cc_flags(Subdir::Linux64, &config()).unwrap(),
             " -target x86_64-linux-gnu.2.28 -mcpu=baseline"
         );
         let cfg = ZigBackendConfig {
             target: Some("native".to_string()),
             ..config()
         };
-        assert_eq!(zig_cc_flags(Platform::Linux64, &cfg).unwrap(), "");
+        assert_eq!(zig_cc_flags(Subdir::Linux64, &cfg).unwrap(), "");
     }
 
     #[test]
@@ -269,7 +269,7 @@ mod tests {
             standard_options: Some(false),
             ..config()
         };
-        let args = zig_build_args(Platform::Linux64, &cfg).unwrap();
+        let args = zig_build_args(Subdir::Linux64, &cfg).unwrap();
         assert!(args.is_empty());
     }
 }

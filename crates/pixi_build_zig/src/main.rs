@@ -14,12 +14,20 @@ use pixi_build_backend::{
     variants::NormalizedKey,
 };
 use rattler_build_recipe::stage0::{BinaryRelocation, Item, Script, SerializableMatchSpec, Value};
-use rattler_conda_types::{ChannelUrl, Platform};
+use rattler_conda_types::{ChannelUrl, Subdir};
 use std::collections::HashSet;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+
+/// The subdir of the machine running the build. `Subdir::current()` is
+/// `None` on platforms rattler does not know; `NoArch` then makes every
+/// `is_*` probe false, which is the conservative answer for all our uses
+/// (bash vs cmd.exe, mac-ness, native-build detection).
+fn build_subdir() -> Subdir {
+    Subdir::current().unwrap_or(Subdir::NoArch)
+}
 
 #[derive(Default, Clone)]
 pub struct ZigGenerator {}
@@ -33,7 +41,7 @@ impl GenerateRecipe for ZigGenerator {
         model: &pixi_build_types::ProjectModel,
         config: &Self::Config,
         manifest_path: PathBuf,
-        host_platform: Platform,
+        host_platform: Subdir,
         _python_params: Option<PythonParams>,
         _variants: &HashSet<NormalizedKey>,
         _channels: Vec<ChannelUrl>,
@@ -79,10 +87,10 @@ impl GenerateRecipe for ZigGenerator {
         // substitutes another provider of the `zig` executable (e.g. a
         // repackaged upstream binary without conda-forge's patches).
         let toolchain_spec = config.toolchain_package.as_deref().unwrap_or("zig");
-        let toolchain_spec: SerializableMatchSpec = toolchain_spec
-            .parse()
-            .into_diagnostic()
-            .wrap_err_with(|| format!("invalid `toolchain-package` match spec: {toolchain_spec:?}"))?;
+        let toolchain_spec: SerializableMatchSpec =
+            toolchain_spec.parse().into_diagnostic().wrap_err_with(|| {
+                format!("invalid `toolchain-package` match spec: {toolchain_spec:?}")
+            })?;
         requirements
             .build
             .push(Item::Value(Value::new_concrete(toolchain_spec, None)));
@@ -106,7 +114,7 @@ impl GenerateRecipe for ZigGenerator {
             source_dir: manifest_root.display().to_string(),
             args,
             cc_flags,
-            is_bash: !Platform::current().is_windows(),
+            is_bash: !build_subdir().is_windows(),
             host_is_windows: host_platform.is_windows(),
             // An explicit value in the config's `env` wins; otherwise export
             // unconditionally — the conda-forge zig activation pre-sets a
@@ -116,7 +124,7 @@ impl GenerateRecipe for ZigGenerator {
             // conda-forge's zig prefers a shared libc++ found next to its own
             // lib dir over the bundled static one. That probe is only active
             // when target and build arch match, i.e. native builds here.
-            warn_shared_libcxx: host_platform == Platform::current(),
+            warn_shared_libcxx: host_platform == build_subdir(),
         }
         .render();
 
@@ -127,7 +135,7 @@ impl GenerateRecipe for ZigGenerator {
         // itself, so default to skipping binary relocation there instead of
         // failing the build. `binary-relocation` in the config overrides
         // this in either direction.
-        let cross_to_macos = host_platform.is_osx() && !Platform::current().is_osx();
+        let cross_to_macos = host_platform.is_osx() && !build_subdir().is_osx();
         if !config.binary_relocation.unwrap_or(!cross_to_macos) {
             generated_recipe
                 .recipe
@@ -182,8 +190,7 @@ pub fn main() {
     // relocation-enabled cross builds for macOS re-sign after relinking. An
     // explicit value from the caller wins.
     // SAFETY: no other threads exist yet; the tokio runtime starts below.
-    if !Platform::current().is_osx() && std::env::var_os("RATTLER_BUILD_BUILTIN_CODESIGN").is_none()
-    {
+    if !build_subdir().is_osx() && std::env::var_os("RATTLER_BUILD_BUILTIN_CODESIGN").is_none() {
         unsafe { std::env::set_var("RATTLER_BUILD_BUILTIN_CODESIGN", "1") };
     }
     async_main();
@@ -259,7 +266,7 @@ mod tests {
                 &project_model,
                 &ZigBackendConfig::default(),
                 PathBuf::from("."),
-                Platform::Linux64,
+                Subdir::Linux64,
                 None,
                 &HashSet::new(),
                 vec![],
@@ -300,7 +307,7 @@ mod tests {
                 &project_model,
                 &ZigBackendConfig::default(),
                 PathBuf::from("."),
-                Platform::Linux64,
+                Subdir::Linux64,
                 None,
                 &HashSet::new(),
                 vec![],
@@ -347,7 +354,7 @@ mod tests {
                     ..Default::default()
                 },
                 PathBuf::from("."),
-                Platform::Linux64,
+                Subdir::Linux64,
                 None,
                 &HashSet::new(),
                 vec![],
@@ -385,7 +392,7 @@ mod tests {
                     ..Default::default()
                 },
                 PathBuf::from("."),
-                Platform::Linux64,
+                Subdir::Linux64,
                 None,
                 &HashSet::new(),
                 vec![],
@@ -410,12 +417,12 @@ mod tests {
         });
 
         for (platform, expected) in [
-            (Platform::current(), true),
+            (build_subdir(), true),
             (
-                if Platform::current() == Platform::Linux64 {
-                    Platform::LinuxAarch64
+                if build_subdir() == Subdir::Linux64 {
+                    Subdir::LinuxAarch64
                 } else {
-                    Platform::Linux64
+                    Subdir::Linux64
                 },
                 false,
             ),
@@ -457,7 +464,7 @@ mod tests {
                 &project_model,
                 &ZigBackendConfig::default(),
                 PathBuf::from("."),
-                Platform::WinArm64,
+                Subdir::WinArm64,
                 None,
                 &HashSet::new(),
                 vec![],
@@ -490,7 +497,7 @@ mod tests {
                     ..Default::default()
                 },
                 PathBuf::from("."),
-                Platform::Linux64,
+                Subdir::Linux64,
                 None,
                 &HashSet::new(),
                 vec![],
@@ -522,7 +529,7 @@ mod tests {
                 &project_model,
                 &ZigBackendConfig::default(),
                 PathBuf::from("."),
-                Platform::Linux64,
+                Subdir::Linux64,
                 None,
                 &HashSet::new(),
                 vec![],
@@ -555,7 +562,7 @@ mod tests {
                     ..Default::default()
                 },
                 PathBuf::from("."),
-                Platform::Linux64,
+                Subdir::Linux64,
                 None,
                 &HashSet::new(),
                 vec![],
@@ -587,7 +594,7 @@ mod tests {
                     ..Default::default()
                 },
                 PathBuf::from("."),
-                Platform::Linux64,
+                Subdir::Linux64,
                 None,
                 &HashSet::new(),
                 vec![],
@@ -622,7 +629,7 @@ mod tests {
                     ..Default::default()
                 },
                 PathBuf::from("."),
-                Platform::Linux64,
+                Subdir::Linux64,
                 None,
                 &HashSet::new(),
                 vec![],
@@ -650,7 +657,7 @@ mod tests {
     async fn test_cross_to_macos_disables_binary_relocation() {
         // These tests run on linux/windows CI machines; guard the one
         // platform where the cross-to-macos default does not apply.
-        if Platform::current().is_osx() {
+        if build_subdir().is_osx() {
             return;
         }
 
@@ -667,7 +674,7 @@ mod tests {
                 &project_model,
                 &ZigBackendConfig::default(),
                 PathBuf::from("."),
-                Platform::OsxArm64,
+                Subdir::OsxArm64,
                 None,
                 &HashSet::new(),
                 vec![],
@@ -692,7 +699,7 @@ mod tests {
                     ..Default::default()
                 },
                 PathBuf::from("."),
-                Platform::OsxArm64,
+                Subdir::OsxArm64,
                 None,
                 &HashSet::new(),
                 vec![],
@@ -714,7 +721,7 @@ mod tests {
                 &project_model,
                 &ZigBackendConfig::default(),
                 PathBuf::from("."),
-                Platform::Linux64,
+                Subdir::Linux64,
                 None,
                 &HashSet::new(),
                 vec![],
@@ -748,7 +755,7 @@ mod tests {
                 &project_model,
                 &ZigBackendConfig::default(),
                 dir.path().to_path_buf(),
-                Platform::Linux64,
+                Subdir::Linux64,
                 None,
                 &HashSet::new(),
                 vec![],
@@ -781,7 +788,7 @@ mod tests {
                     ..Default::default()
                 },
                 dir.path().to_path_buf(),
-                Platform::Linux64,
+                Subdir::Linux64,
                 None,
                 &HashSet::new(),
                 vec![],
@@ -814,7 +821,7 @@ mod tests {
                     ..Default::default()
                 },
                 PathBuf::from("."),
-                Platform::Linux64,
+                Subdir::Linux64,
                 None,
                 &HashSet::new(),
                 vec![],
