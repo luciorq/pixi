@@ -120,6 +120,15 @@ pub struct ZigBackendConfig {
     /// different toolchain; it must put a `zig` executable on `PATH`. A
     /// version constraint is allowed (`"zig-upstream ==0.16.0"`).
     pub toolchain_package: Option<String>,
+    /// Share zig's *global* cache (compiled build-system maker/configurer,
+    /// compiler_rt, libc stubs — content-addressed, safe to share) across
+    /// all builds of the workspace by placing it in pixi's per-workspace
+    /// scratch directory. zig 0.17 compiles its build system into this
+    /// cache on first use (~100 s cold), so a per-build cache pays that on
+    /// every package build. Set to `false` for a fully per-build cache under
+    /// `$SRC_DIR`. An explicit `ZIG_GLOBAL_CACHE_DIR` in `env` overrides
+    /// both. Defaults to `true`.
+    pub shared_global_cache: Option<bool>,
 }
 
 impl BackendConfig for ZigBackendConfig {
@@ -173,6 +182,9 @@ impl BackendConfig for ZigBackendConfig {
                 .toolchain_package
                 .clone()
                 .or_else(|| self.toolchain_package.clone()),
+            shared_global_cache: target_config
+                .shared_global_cache
+                .or(self.shared_global_cache),
         })
     }
 }
@@ -202,6 +214,7 @@ mod tests {
             "macos-deployment-target": "11.0",
             "standard-options": true,
             "toolchain-package": "zig-upstream ==0.16.0",
+            "shared-global-cache": false,
         });
         let config = serde_json::from_value::<ZigBackendConfig>(json_data).unwrap();
         assert_eq!(config.optimize, Some(ZigOptimize::ReleaseSafe));
@@ -209,6 +222,7 @@ mod tests {
             config.toolchain_package.as_deref(),
             Some("zig-upstream ==0.16.0")
         );
+        assert_eq!(config.shared_global_cache, Some(false));
         assert_eq!(config.windows_abi, Some(WindowsAbi::Msvc));
         assert_eq!(config.glibc_version.as_deref(), Some("2.34"));
     }

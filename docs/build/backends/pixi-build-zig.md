@@ -36,10 +36,13 @@ The backend automatically generates conda packages from Zig projects by:
 - **Zig C toolchain everywhere**: exports `CC="zig cc ..."`,
   `CXX="zig c++ ..."`, `AR="zig ar"` and `RANLIB="zig ranlib"` so build steps
   that spawn external tools compile and link with zig for the same target
-- **Hermetic caches**: keeps `ZIG_GLOBAL_CACHE_DIR`/`ZIG_LOCAL_CACHE_DIR`
-  inside the work directory, overriding the HOME-based default the
-  conda-forge zig activation sets; provide either variable through the
-  `env` option to take over
+- **Controlled caches**: keeps `ZIG_LOCAL_CACHE_DIR` inside the work
+  directory and points `ZIG_GLOBAL_CACHE_DIR` at pixi's per-workspace
+  scratch directory so the compiled build system and `compiler_rt` are
+  reused across the workspace's builds (zig 0.17 compiles its build system
+  into the global cache on first use), overriding the HOME-based default
+  the conda-forge zig activation sets; see `shared-global-cache`, or
+  provide either variable through the `env` option to take over
 
 ## Basic Usage
 
@@ -254,6 +257,27 @@ during cross builds. This routes configure/make steps and dependency build
 scripts through zig. Note that C/C++ sources compiled inside `build.zig`
 always use zig's bundled clang regardless of this setting.
 
+### `shared-global-cache`
+
+- **Type**: `Boolean`
+- **Default**: `true`
+
+Where zig's *global* cache lives. The global cache holds content-addressed
+artifacts that do not depend on the package being built: the compiled
+build-system maker and configurer (zig ≥ 0.17 compiles them on first use,
+roughly 100 s and 1 GB of RAM cold), `compiler_rt`, and libc stubs per
+target. By default the backend places it in pixi's per-workspace scratch
+directory (`.pixi/scratch-v0/zig-global-cache`) so every build of the
+workspace — native and cross — reuses it. Set to `false` to keep it under
+the build's work directory instead, paying the first-use compile on every
+package build. The *local* cache is always per build. An explicit
+`ZIG_GLOBAL_CACHE_DIR` in `env` overrides both.
+
+```toml
+[package.build.config]
+shared-global-cache = false
+```
+
 ### `toolchain-package`
 
 - **Type**: `String` (a conda match spec)
@@ -339,6 +363,10 @@ prefer vendoring for reproducibility.
   declare `libcxx` as a host dependency (its run-exports cover the runtime)
   or keep it out of build dependencies. To build with the unpatched
   upstream compiler, see `toolchain-package`.
+- **zig 0.17 build system.** `zig build` now compiles its maker and
+  configurer from `lib/zig/compiler` into the global cache on first use, so
+  a `toolchain-package` substitute must ship `lib/zig` whole, and a cold
+  global cache costs about 100 s (see `shared-global-cache`).
 
 - Cross-compiling to macOS system frameworks requires an SDK; plain
   executables and libraries work without one.

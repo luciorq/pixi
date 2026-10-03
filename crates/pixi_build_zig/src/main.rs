@@ -46,7 +46,7 @@ impl GenerateRecipe for ZigGenerator {
         _variants: &HashSet<NormalizedKey>,
         _channels: Vec<ChannelUrl>,
         _cache_dir: Option<PathBuf>,
-        _workspace_scratch_directory: Option<PathBuf>,
+        workspace_scratch_directory: Option<PathBuf>,
         _workspace_directory: Option<PathBuf>,
         _checkout_root: Option<PathBuf>,
     ) -> miette::Result<GeneratedRecipe> {
@@ -121,6 +121,18 @@ impl GenerateRecipe for ZigGenerator {
             // HOME-based global cache that would defeat hermetic builds.
             export_global_cache: !config.env.contains_key("ZIG_GLOBAL_CACHE_DIR"),
             export_local_cache: !config.env.contains_key("ZIG_LOCAL_CACHE_DIR"),
+            // Share the global cache across the workspace's builds through
+            // pixi's scratch directory (zig 0.17 compiles its build system
+            // into the global cache on first use, ~100 s cold). Falls back
+            // to a per-build directory when pixi provides no scratch dir or
+            // the user opts out.
+            shared_global_cache_dir: if config.shared_global_cache.unwrap_or(true) {
+                workspace_scratch_directory
+                    .as_ref()
+                    .map(|dir| dir.join("zig-global-cache").display().to_string())
+            } else {
+                None
+            },
             // conda-forge's zig prefers a shared libc++ found next to its own
             // lib dir over the bundled static one. That probe is only active
             // when target and build arch match, i.e. native builds here.
@@ -449,6 +461,52 @@ mod tests {
                 expected,
                 "platform {platform}: libc++ warning presence"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_global_cache_shared_through_workspace_scratch_dir() {
+        let project_model = project_fixture!({
+            "name": "foobar",
+            "version": "0.1.0",
+        });
+        let scratch = PathBuf::from("/ws/.pixi/scratch-v0");
+
+        for (config, scratch_dir, expect_shared) in [
+            (ZigBackendConfig::default(), Some(scratch.clone()), true),
+            (ZigBackendConfig::default(), None, false),
+            (
+                ZigBackendConfig {
+                    shared_global_cache: Some(false),
+                    ..Default::default()
+                },
+                Some(scratch.clone()),
+                false,
+            ),
+        ] {
+            let generated_recipe = ZigGenerator::default()
+                .generate_recipe(
+                    &project_model,
+                    &config,
+                    PathBuf::from("."),
+                    Subdir::Linux64,
+                    None,
+                    &HashSet::new(),
+                    vec![],
+                    None,
+                    scratch_dir,
+                    None,
+                    None,
+                )
+                .await
+                .expect("Failed to generate recipe");
+            let content = script_content(&generated_recipe);
+            let shared =
+                content.contains("ZIG_GLOBAL_CACHE_DIR=\"/ws/.pixi/scratch-v0/zig-global-cache\"");
+            let per_build = content.contains("ZIG_GLOBAL_CACHE_DIR=\"$SRC_DIR/.zig-global-cache\"");
+            assert_eq!(shared, expect_shared, "shared cache export");
+            assert_eq!(per_build, !expect_shared, "per-build cache export");
+            assert!(content.contains("ZIG_LOCAL_CACHE_DIR=\"$SRC_DIR/.zig-local-cache\""));
         }
     }
 

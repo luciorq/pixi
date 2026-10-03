@@ -34,6 +34,12 @@ pub struct BuildScriptContext {
     pub export_global_cache: bool,
     pub export_local_cache: bool,
 
+    /// When set (and `export_global_cache` is true), `ZIG_GLOBAL_CACHE_DIR`
+    /// points at this absolute path — pixi's per-workspace scratch
+    /// directory — instead of a per-build directory under `$SRC_DIR`, so
+    /// the compiled build system and compiler_rt are reused across builds.
+    pub shared_global_cache_dir: Option<String>,
+
     /// Emit a build-time warning when a shared libc++ sits in
     /// `$BUILD_PREFIX/lib`: conda-forge's zig is patched to prefer it over
     /// the bundled static libc++, which silently gives C++ artifacts an
@@ -67,6 +73,7 @@ mod test {
             host_is_windows,
             export_global_cache: true,
             export_local_cache: true,
+            shared_global_cache_dir: None,
             warn_shared_libcxx: false,
         }
         .render()
@@ -158,6 +165,7 @@ mod test {
             host_is_windows: false,
             export_global_cache: false,
             export_local_cache: true,
+            shared_global_cache_dir: None,
             warn_shared_libcxx: false,
         }
         .render();
@@ -175,6 +183,7 @@ mod test {
             host_is_windows: false,
             export_global_cache: true,
             export_local_cache: true,
+            shared_global_cache_dir: None,
             warn_shared_libcxx: false,
         }
         .render();
@@ -198,6 +207,7 @@ mod test {
                 host_is_windows: !is_bash,
                 export_global_cache: true,
                 export_local_cache: true,
+                shared_global_cache_dir: None,
                 warn_shared_libcxx: true,
             }
             .render()
@@ -212,5 +222,37 @@ mod test {
         assert!(bash.find("WARNING").unwrap() < bash.find("zig build").unwrap());
         // cmd.exe scripts carry no probe.
         assert!(!render(false).contains("libc++"));
+    }
+
+    #[test]
+    fn test_build_script_shared_global_cache_dir() {
+        let render = |is_bash: bool| {
+            super::BuildScriptContext {
+                source_dir: String::from("my-source-dir"),
+                args: vec![],
+                cc_flags: None,
+                is_bash,
+                host_is_windows: !is_bash,
+                export_global_cache: true,
+                export_local_cache: true,
+                shared_global_cache_dir: Some(if is_bash {
+                    "/ws/.pixi/scratch-v0/zig-global-cache".to_string()
+                } else {
+                    r"C:\ws\.pixi\scratch-v0\zig-global-cache".to_string()
+                }),
+                warn_shared_libcxx: false,
+            }
+            .render()
+        };
+        let bash = render(true);
+        assert!(
+            bash.contains(r#"export ZIG_GLOBAL_CACHE_DIR="/ws/.pixi/scratch-v0/zig-global-cache""#)
+        );
+        // The local cache stays per build.
+        assert!(bash.contains(r#"export ZIG_LOCAL_CACHE_DIR="$SRC_DIR/.zig-local-cache""#));
+        let cmd = render(false);
+        assert!(
+            cmd.contains(r#"SET "ZIG_GLOBAL_CACHE_DIR=C:\ws\.pixi\scratch-v0\zig-global-cache""#)
+        );
     }
 }

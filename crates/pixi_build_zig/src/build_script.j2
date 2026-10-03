@@ -1,8 +1,12 @@
-{#- Cache dirs: keep zig's caches inside the work directory so builds stay
-    hermetic and incremental rebuilds reuse them. Exported unconditionally
-    because the conda-forge zig activation pre-sets a HOME-based
-    ZIG_GLOBAL_CACHE_DIR; only an explicit value in the backend's `env`
-    config suppresses the export (the generator checks the config keys).
+{#- Cache dirs. The LOCAL cache lives in the work directory (per build).
+    The GLOBAL cache (compiled build-system maker/configurer, compiler_rt,
+    libc stubs; content-addressed) is shared across the workspace's builds
+    via pixi's scratch directory when available, because zig 0.17 compiles
+    its build system into it on first use (~100 s cold); it falls back to
+    the work directory. Exported unconditionally because the conda-forge
+    zig activation pre-sets a HOME-based ZIG_GLOBAL_CACHE_DIR; only an
+    explicit value in the backend's `env` config suppresses the export
+    (the generator checks the config keys).
     C toolchain: route everything the build spawns (configure/make steps,
     dependency build scripts probing $CC) through zig's C toolchain,
     targeting the same triple as the zig build itself. CC_FOR_BUILD stays
@@ -27,7 +31,11 @@ SET "{{ key }}={{ value }}"
 {%- set install_prefix = env("PREFIX") -%}
 {%- endif -%}
 {%- if export_global_cache %}
+{%- if shared_global_cache_dir is not none %}
+{{ export("ZIG_GLOBAL_CACHE_DIR", shared_global_cache_dir) }}
+{%- else %}
 {{ export("ZIG_GLOBAL_CACHE_DIR", env("SRC_DIR") ~ ("/" if is_bash else "\\") ~ ".zig-global-cache") }}
+{%- endif %}
 {%- endif %}
 {%- if export_local_cache %}
 {{ export("ZIG_LOCAL_CACHE_DIR", env("SRC_DIR") ~ ("/" if is_bash else "\\") ~ ".zig-local-cache") }}
