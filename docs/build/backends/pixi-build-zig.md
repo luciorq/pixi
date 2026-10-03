@@ -299,6 +299,23 @@ Note that a user-declared `zig` entry in `[package.build-dependencies]`
 still pulls conda-forge `zig` alongside the substitute; drop it when
 switching toolchains.
 
+The spec may be channel-qualified, e.g. to build with conda-forge's
+pre-release zig from its `zig_dev` label:
+
+```toml
+[workspace]
+channels = ["conda-forge/label/zig_dev", "conda-forge"]
+
+[package.build.config]
+toolchain-package = "conda-forge/label/zig_dev::zig>=0.17"
+```
+
+The channel must also be listed in the workspace `channels`; a dependency
+cannot reach a channel the workspace does not use. Declaring the same
+thing as a regular build dependency,
+`zig = { version = ">=0.17", channel = "conda-forge/label/zig_dev" }`,
+is equivalent.
+
 ### `extra-args`
 
 - **Type**: `Array<String>`
@@ -334,6 +351,83 @@ env = { ZIG_VERBOSE = "1" }
 
 Extra input globs considered for rebuild detection, in addition to the
 defaults (`**/*.zig`, `build.zig`, `build.zig.zon`).
+
+### Full example
+
+Every option declared once, with non-default values that stay mutually
+compatible. This is the manifest of the backend testbed's `options-zig`
+drift test, kept byte-identical there and checked on every update cycle.
+
+Per-target sections (`[package.build.target.<platform>.config]`) merge into
+the base config when building for that platform: `extra-args` and
+`extra-input-globs` are **replaced wholesale** by the target's list when it
+is non-empty, `env` **merges** with the target's entries winning on
+conflicts, and every scalar option is **target-wins** when set. `target =
+"native"` and `standard-options = false` are omitted here because they
+suppress the `-D` flags the other options produce.
+
+```toml
+# Full-surface drift test for the pixi-build-zig backend: every
+# `[package.build.config]` option declared once with a non-default value,
+# built natively on linux-64 only. The backend docs ("Full example") carry
+# this file verbatim; the update-and-rebase skill diffs the two.
+
+[workspace]
+authors = ["luciorq <luciorqueiroz@gmail.com>"]
+channels = ["conda-forge"]
+name = "options-zig"
+platforms = ["linux-64"]
+version = "0.1.0"
+preview = ["pixi-build"]
+
+[dependencies]
+options_zig = { path = "." }
+
+[tasks]
+options = "options-zig"
+
+# ignore-zon-manifest = true below, so name and version must come from here
+# (the build.zig.zon deliberately carries different values).
+[package]
+name = "options_zig"
+version = "0.3.0"
+
+[package.build]
+backend = { name = "pixi-build-zig", version = "*" }
+
+[package.build-dependencies]
+zig = "0.16.*"
+
+[package.build.config]
+# `target` stays at its default (derived from the conda platform) so the
+# -Dtarget/-Dcpu/-Doptimize flags below are emitted.
+cpu = "x86_64_v2"
+optimize = "ReleaseSafe"
+glibc-version = "2.31"
+# Project option consumed by build.zig: b.option([]const u8, "greeting", ...).
+extra-args = ["-Dgreeting=drift"]
+# Harmless variable; build.zig echoes it so it shows up in the build log.
+env = { OPTIONS_ZIG_DEMO = "drift-test" }
+# assets/banner.txt is embedded by build.zig, so edits must trigger rebuilds.
+extra-input-globs = ["assets/**"]
+ignore-zon-manifest = true
+# Per-build global cache: the work directory gains .zig-global-cache.
+shared-global-cache = false
+binary-relocation = true
+export-c-toolchain = true
+# The default provider, spelled out so the key stays parsed.
+toolchain-package = "zig"
+
+# Per-target overrides merge into the base config: `extra-args` and
+# `extra-input-globs` are replaced wholesale, `env` merges with the target's
+# entries winning, scalars are target-wins. These two platforms are not
+# built; the sections exercise the parse and merge path.
+[package.build.target.win-64.config]
+windows-abi = "msvc"
+
+[package.build.target.osx-arm64.config]
+macos-deployment-target = "12.0"
+```
 
 ## build.zig.zon dependencies
 
